@@ -2,7 +2,7 @@
 ## Title: SymmetricalChatAndDamageMeter
 ## Notes: Positions the native Damage Meter as a mirror image of the chat window (same size, bottom-right corner), split evenly into multiple side-by-side windows - the primary on the left (Damage Done by default) and up to two more you can switch to any other metric (Healing Done, HPS, etc) via each window's own native dropdown. The number of windows is configurable in Interface Options -> AddOns -> SymmetricalChatAndDamageMeter. Also forces chat flush to the screen's bottom-left corner, hides the chat frame's side buttons, and moves the chat draft box above chat (hidden except while actively typing).
 ## Author: Richard Bankhead
-## Version: 2.3.1
+## Version: 2.3.2
 ## SavedVariables: SymmetricalChatAndDamageMeterDB
 
 Core.lua

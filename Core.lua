@@ -57,43 +57,23 @@ end
 
 local db -- SymmetricalChatAndDamageMeterDB, set on ADDON_LOADED
 
--- Natively, a bar's per-ability breakdown only opens on click
--- (DamageMeterSessionWindowMixin:InitEntry, confirmed real in
--- DamageMeterSessionWindow.lua, sets each entry's OnClick to
--- self:ShowSourceWindow(elementData, IsShiftKeyDown()) - the real function
--- behind that breakdown popup, with the matching self:HideSourceWindow() to
--- close it).
---
--- hooksecurefunc(DamageMeterSessionWindowMixin, "InitEntry", ...) - hooking
--- the shared mixin table - did nothing, confirmed in-game. Real cause: WoW's
--- Mixin() (the real, standard FrameXML utility that wires mixin="..." in
--- XML) does a one-time shallow copy of every function onto the object at
--- creation time (object[k] = v for each mixin function), not a live lookup
--- through the mixin table - so each session window's own self.InitEntry is
--- already a direct reference to the ORIGINAL function from the moment it was
--- created, same as PlayerFrame's OnLeave script elsewhere in this addon's
--- history: hooking the shared table afterward patches something nothing
--- actually calls through anymore. hooksecurefunc has to target each window
--- INSTANCE instead, which HookEntryMouseover below does, called from
--- LayoutSessionWindows for every window it already touches - guarded by
--- hookedEntryMouseover so a window already hooked on a previous layout pass
--- isn't hooked again.
-local hookedEntryMouseover = setmetatable({}, { __mode = "k" })
-
-local function HookEntryMouseover(win)
-	if not win or hookedEntryMouseover[win] then
-		return
-	end
-	hookedEntryMouseover[win] = true
-	hooksecurefunc(win, "InitEntry", function(self, frame, elementData)
-		frame:SetScript("OnEnter", function()
-			self:ShowSourceWindow(elementData, false)
-		end)
-		frame:SetScript("OnLeave", function()
-			self:HideSourceWindow()
-		end)
-	end)
-end
+-- Tried making a bar's per-ability breakdown open on mouseover instead of
+-- click (self:ShowSourceWindow(elementData, false)/self:HideSourceWindow(),
+-- the real functions the native click handler uses, confirmed in
+-- DamageMeterSessionWindow.lua) - reverted. Confirmed in-game: calling
+-- ShowSourceWindow from this addon's own code taints the session window
+-- object the same way creating a secondary window does (see
+-- SetSessionDuration above), except this taint hits something that refreshes
+-- continuously rather than once - DamageMeterSourceWindow.lua:234
+-- (IsShowingSource) compares a secret sourceGUID on every periodic
+-- BuildDataProvider refresh, throwing repeatedly (confirmed: error count
+-- climbing steadily, not a one-off) for as long as the window stays open.
+-- pcall doesn't stop a secret-value error from surfacing either (confirmed
+-- separately for the tooltip fix above) - so unlike the other taint issues
+-- in this file, there's no way to keep this feature without an addon-driven
+-- trigger being the actual cause. Only a real native click avoids tainting
+-- the window at all, which is what this reverts to - click-to-expand stays
+-- exactly as Blizzard built it.
 
 local function FixScrollBoxHeight(win)
 	if not win or not win.GetScrollBox or not win.GetMinimizeContainer then
@@ -345,7 +325,6 @@ local function LayoutSessionWindows()
 		win:SetPoint("TOPLEFT", DamageMeter, "TOPLEFT", (i - 1) * colWidth, 0)
 		win:SetPoint("BOTTOMRIGHT", DamageMeter, "TOPLEFT", i * colWidth, -height)
 		FixScrollBoxHeight(win)
-		HookEntryMouseover(win)
 	end
 end
 
