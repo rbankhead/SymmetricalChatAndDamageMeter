@@ -57,6 +57,29 @@ end
 
 local db -- SymmetricalChatAndDamageMeterDB, set on ADDON_LOADED
 
+-- Natively, a bar's per-ability breakdown only opens on click
+-- (DamageMeterSessionWindowMixin:InitEntry, confirmed real in
+-- DamageMeterSessionWindow.lua, sets each entry's OnClick to
+-- self:ShowSourceWindow(elementData, IsShiftKeyDown()) - the real function
+-- behind that breakdown popup, with the matching self:HideSourceWindow() to
+-- close it). hooksecurefunc on InitEntry itself (a method on the shared
+-- DamageMeterSessionWindowMixin table, so this fires for every session
+-- window instance, not just one) runs right after Blizzard wires up that
+-- row's click handler for its current elementData - this plain SetScript
+-- (not HookScript) on OnEnter/OnLeave deliberately overwrites whatever this
+-- same addon set on the PREVIOUS elementData this pooled/reused entry frame
+-- held, the same way Blizzard's own OnClick assignment here does, rather
+-- than stacking a new hook (and a stale elementData closure) on it every
+-- time the scroll box re-uses the frame for different data.
+hooksecurefunc(DamageMeterSessionWindowMixin, "InitEntry", function(self, frame, elementData)
+	frame:SetScript("OnEnter", function()
+		self:ShowSourceWindow(elementData, false)
+	end)
+	frame:SetScript("OnLeave", function()
+		self:HideSourceWindow()
+	end)
+end)
+
 local function FixScrollBoxHeight(win)
 	if not win or not win.GetScrollBox or not win.GetMinimizeContainer then
 		return
