@@ -202,11 +202,21 @@ end
 -- immediately, but Edit Mode's saved anchorInfo for it is never updated, so
 -- the next time Edit Mode re-applies its layout (ApplySystemAnchor, e.g. on
 -- a later login or layout switch) it snaps straight back, making this look
--- like it never moved at all. The real fix is the same call Blizzard's own
--- drag-to-move code makes right after a drag finishes
--- (EditModeSystemMixin:OnDragStop calls self:OnSystemPositionChange()) -
--- that tells Edit Mode to read the frame's current point back out and adopt
--- it as the new saved anchor, instead of us fighting the override.
+-- like it never moved at all.
+--
+-- Used to also call self:OnSystemPositionChange() here (the same call
+-- Blizzard's own drag-to-move code makes right after a drag finishes) to
+-- get Edit Mode to adopt this as the new saved anchor - removed. Confirmed
+-- in-game: "blocked from an action only available to the Blizzard UI"
+-- happened on every reload regardless of combat state, which doesn't fit a
+-- combat-lockdown explanation (already tried and ruled out) nearly as well
+-- as this - OnSystemPositionChange is designed to run from inside Edit
+-- Mode's own drag-completion handler, not from addon code calling it
+-- directly, and persisting a new saved anchor is exactly the kind of thing
+-- plausibly reserved for genuine user-driven Edit Mode actions. Not calling
+-- it isn't a real loss: the position-poll below already re-flushes chat on
+-- every login regardless of whether Edit Mode "remembers" this between
+-- sessions, which is what was actually keeping chat flush the whole time.
 --
 -- Still wasn't reaching the true corner even so, and confirmed in-game that
 -- dragging it there by hand in Edit Mode isn't possible either - because
@@ -227,9 +237,6 @@ local function FlushChatToCorner()
 	ChatFrame1:ClearAllPoints()
 	ChatFrame1:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 0, 0)
 	ChatFrame1:SetSize(w, h)
-	if ChatFrame1.OnSystemPositionChange then
-		ChatFrame1:OnSystemPositionChange()
-	end
 end
 
 local function GetDesiredWindowCount()
