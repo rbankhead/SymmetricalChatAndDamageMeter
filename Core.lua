@@ -62,23 +62,38 @@ local db -- SymmetricalChatAndDamageMeterDB, set on ADDON_LOADED
 -- DamageMeterSessionWindow.lua, sets each entry's OnClick to
 -- self:ShowSourceWindow(elementData, IsShiftKeyDown()) - the real function
 -- behind that breakdown popup, with the matching self:HideSourceWindow() to
--- close it). hooksecurefunc on InitEntry itself (a method on the shared
--- DamageMeterSessionWindowMixin table, so this fires for every session
--- window instance, not just one) runs right after Blizzard wires up that
--- row's click handler for its current elementData - this plain SetScript
--- (not HookScript) on OnEnter/OnLeave deliberately overwrites whatever this
--- same addon set on the PREVIOUS elementData this pooled/reused entry frame
--- held, the same way Blizzard's own OnClick assignment here does, rather
--- than stacking a new hook (and a stale elementData closure) on it every
--- time the scroll box re-uses the frame for different data.
-hooksecurefunc(DamageMeterSessionWindowMixin, "InitEntry", function(self, frame, elementData)
-	frame:SetScript("OnEnter", function()
-		self:ShowSourceWindow(elementData, false)
+-- close it).
+--
+-- hooksecurefunc(DamageMeterSessionWindowMixin, "InitEntry", ...) - hooking
+-- the shared mixin table - did nothing, confirmed in-game. Real cause: WoW's
+-- Mixin() (the real, standard FrameXML utility that wires mixin="..." in
+-- XML) does a one-time shallow copy of every function onto the object at
+-- creation time (object[k] = v for each mixin function), not a live lookup
+-- through the mixin table - so each session window's own self.InitEntry is
+-- already a direct reference to the ORIGINAL function from the moment it was
+-- created, same as PlayerFrame's OnLeave script elsewhere in this addon's
+-- history: hooking the shared table afterward patches something nothing
+-- actually calls through anymore. hooksecurefunc has to target each window
+-- INSTANCE instead, which HookEntryMouseover below does, called from
+-- LayoutSessionWindows for every window it already touches - guarded by
+-- hookedEntryMouseover so a window already hooked on a previous layout pass
+-- isn't hooked again.
+local hookedEntryMouseover = setmetatable({}, { __mode = "k" })
+
+local function HookEntryMouseover(win)
+	if not win or hookedEntryMouseover[win] then
+		return
+	end
+	hookedEntryMouseover[win] = true
+	hooksecurefunc(win, "InitEntry", function(self, frame, elementData)
+		frame:SetScript("OnEnter", function()
+			self:ShowSourceWindow(elementData, false)
+		end)
+		frame:SetScript("OnLeave", function()
+			self:HideSourceWindow()
+		end)
 	end)
-	frame:SetScript("OnLeave", function()
-		self:HideSourceWindow()
-	end)
-end)
+end
 
 local function FixScrollBoxHeight(win)
 	if not win or not win.GetScrollBox or not win.GetMinimizeContainer then
@@ -330,6 +345,7 @@ local function LayoutSessionWindows()
 		win:SetPoint("TOPLEFT", DamageMeter, "TOPLEFT", (i - 1) * colWidth, 0)
 		win:SetPoint("BOTTOMRIGHT", DamageMeter, "TOPLEFT", i * colWidth, -height)
 		FixScrollBoxHeight(win)
+		HookEntryMouseover(win)
 	end
 end
 
