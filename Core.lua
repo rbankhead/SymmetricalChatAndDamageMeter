@@ -57,6 +57,24 @@ end
 
 local db -- SymmetricalChatAndDamageMeterDB, set on ADDON_LOADED
 
+-- Confirmed in-game (SwingTimerBuffTracking hit the identical issue first):
+-- a /reload can happen WHILE already in combat, unlike a real login, so any
+-- setup normally assumed to only run at a "safe" moment needs to actually
+-- check for that instead of assuming it. InCombatLockdown()/
+-- PLAYER_REGEN_ENABLED are confirmed real, standard APIs for exactly this.
+local function RunWhenSafe(fn)
+	if InCombatLockdown() then
+		local waiter = CreateFrame("Frame")
+		waiter:RegisterEvent("PLAYER_REGEN_ENABLED")
+		waiter:SetScript("OnEvent", function(self)
+			self:UnregisterEvent("PLAYER_REGEN_ENABLED")
+			fn()
+		end)
+	else
+		fn()
+	end
+end
+
 -- Tried making a bar's per-ability breakdown open on mouseover instead of
 -- click (self:ShowSourceWindow(elementData, false)/self:HideSourceWindow(),
 -- the real functions the native click handler uses, confirmed in
@@ -365,6 +383,11 @@ local function MirrorToChat()
 	-- Show()/etc directly. Deferring one frame via C_Timer.After(0, ...) runs
 	-- that chain in a fresh, untainted call stack instead - the standard way
 	-- to hand a call back to a clean execution context on this client.
+	--
+	-- That taint fix is a separate concern from combat lockdown, which
+	-- ReapplyPositioning below guards against instead (covers this and
+	-- FlushChatToCorner's own ChatFrame1 manipulation together, in one
+	-- place, rather than duplicating the guard in each).
 	C_Timer.After(0, function()
 		DamageMeter:Show()
 		ApplyWindowCount(GetDesiredWindowCount())
@@ -373,9 +396,21 @@ local function MirrorToChat()
 end
 Addon.MirrorToChat = MirrorToChat
 
+-- Confirmed in-game (SwingTimerBuffTracking hit the identical root cause
+-- first): a /reload can happen WHILE already in combat, unlike a real
+-- login, so this whole PLAYER_ENTERING_WORLD-triggered setup -
+-- repositioning ChatFrame1 and creating/resizing/repositioning Damage
+-- Meter's session windows, all Edit-Mode-managed frames - can run
+-- mid-combat on a reload and trip "blocked from an action only available to
+-- the Blizzard UI". RunWhenSafe waits for InCombatLockdown() to actually be
+-- false (via the real PLAYER_REGEN_ENABLED event if it's currently true)
+-- before running either FlushChatToCorner or MirrorToChat, covering both in
+-- one guard rather than duplicating it in each.
 local function ReapplyPositioning()
-	FlushChatToCorner()
-	MirrorToChat()
+	RunWhenSafe(function()
+		FlushChatToCorner()
+		MirrorToChat()
+	end)
 end
 Addon.ReapplyPositioning = ReapplyPositioning
 
